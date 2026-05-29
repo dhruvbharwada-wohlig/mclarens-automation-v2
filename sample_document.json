@@ -1,0 +1,18 @@
+{
+  "invoiceNumber": "DEL-1847-31-32",
+  "approvalStatus": "Approved",
+  "approvalTime": "2026-06-10T11:40:58.258Z",
+  "acknowledgementDate": "2026-06-10T11:40:58.258Z",
+  "acknowledgementNumber": "84726193018475",
+  "irnNumber": "9fc82ab71de45c63b91fa28edc74ab63e92f81dc5ab7291ef48cd26ab73de91",
+  "grandTotal": 18880,
+  "subTotal": 16000,
+  "currency": "INR",
+  "billedToAddress": "",
+  "billedToGSTIN": "",
+  "GSTType": "intraState",
+  "isTallySuccess": false,
+  "isSoftcopySent": true,
+  "isHardcopySent": false,
+  "status": true
+}

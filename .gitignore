@@ -1,0 +1,13 @@
+# Secrets and API Keys
+.env
+credentials/token.json
+credentials/credentials.json
+
+# Python Virtual Environment and Caches
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# OS Files
+.DS_Store
