@@ -18,6 +18,7 @@
   "Invoice NO": "invoiceNumber",
   "Invoice NO.": "invoiceNumber",
   "Invoice #": "invoiceNumber",
+  "Invoice # ": "invoiceNumber",
   "Inv #": "invoiceNumber",
   "Bill No": "invoiceNumber",
   "Bill No.": "invoiceNumber",
@@ -87,5 +88,17 @@
   "Status": "approvalStatus",
   "Invoice Status": "approvalStatus",
   "ApprovalState": "approvalStatus",
-  "Approval State": "approvalStatus"
+  "Approval State": "approvalStatus",
+  "File's Status": "approvalStatus",
+  "File's status": "approvalStatus",
+  "file's status": "approvalStatus",
+  "file's Status": "approvalStatus",
+  "Approval pending list": "approvalStatus",
+  "Approval Pending List": "approvalStatus",
+  "Approval Pending list": "approvalStatus",
+  "Approval pending List": "approvalStatus",
+  "approval pending list": "approvalStatus",
+  "approval Pending List": "approvalStatus",
+  "approval Pending list": "approvalStatus",
+  "approval pending List": "approvalStatus"
 }
