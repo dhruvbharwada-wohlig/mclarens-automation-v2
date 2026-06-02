@@ -8,7 +8,9 @@ import base64
 
 from app.thread_reader import ThreadReader
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/gmail.readonly",
+              "https://www.googleapis.com/auth/gmail.send",
+]
 
 # Accepted sender domains — tasks come from client (mclarens.in) or forwarded by wohlig senior
 TARGET_DOMAINS = ["mclarens.in", "wohlig.com"]
@@ -182,6 +184,7 @@ class GmailReader:
             thread_text     = thread_reader.to_text(thread_messages)
 
             relevant_messages.append({
+                "id" : msg["id"],
                 "sender":         sender,
                 "subject":        subject,
                 "thread_id":      thread_id,
@@ -201,7 +204,7 @@ class GmailReader:
             print(f"THREAD MESSAGES: {len(thread_messages)}+ messages in thread")
             print("=" * 60)
 
-            if len(relevant_messages) == 2:
+            if len(relevant_messages) == 1:
                 break
 
         return relevant_messages

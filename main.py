@@ -1,17 +1,24 @@
+"""
+main.py
+Full pipeline — fetch → dedup → tag → AI → validate → store → send approval email
+"""
+
 import json
-import time  # <--- Imported for sleep delays
-import google.api_core.exceptions # <--- Imported to catch Gemini exceptions
+from datetime import datetime, timezone
 
 from app.gmail_reader import GmailReader
 from app.tagger import Tagger
-from app.dispatcher import Dispatcher
+from app.deduplicator import should_process
+from app.validator import validate_tasks
+from app.task_store import create_task
+from app.email_sender import send_approval_email
 from ai_processor import process
 
-reader     = GmailReader()
-tagger     = Tagger()
-dispatcher = Dispatcher()
+reader = GmailReader()
+tagger = Tagger()
 
-# Phase 1 + 2 — fetch emails and reconstruct full threads
+# ── Step 1: Fetch emails ──────────────────────────────────────────────────────
+
 emails = reader.read_emails()
 
 if not emails:
@@ -19,58 +26,83 @@ if not emails:
 else:
     for email in emails:
 
-        # Phase 3 — auto tag from thread text
-        email["tags"] = tagger.tag(email["thread_text"])
+        subject    = email.get("subject", "")
+        sender     = email.get("sender", "")
+        message_id = email.get("id", "")
+        thread_id  = email.get("thread_id", "")
 
-        # Phase 4 + 5 — run Gemini, get queries + steps + reply
-        print(f"[MAIN] Processing: {email['subject']}")
-        
-        # --- ADDED: Robust Retry Loop for API Quotas ---
-        result = None
-        retries = 3
-        delay = 22  # The error message explicitly asked for ~21.7 seconds
-        
-        for attempt in range(retries):
-            try:
-                result = process(email)
-                break  # Success! Break out of the retry loop
-            except google.api_core.exceptions.ResourceExhausted as e:
-                print(f"[WARNING] Rate limit hit on '{email['subject']}'.")
-                if attempt < retries - 1:
-                    print(f"Waiting {delay} seconds before retrying (Attempt {attempt + 1}/{retries})...")
-                    time.sleep(delay)
-                    # Double the delay for the next attempt (exponential backoff)
-                    delay *= 2 
-                else:
-                    print("[ERROR] Max retries reached for this email. Skipping to avoid total crash.")
-                    break
-            except Exception as e:
-                print(f"[ERROR] Unexpected error: {e}")
-                break
+        print(f"\n[MAIN] Processing: {subject}")
 
-        # If processing failed entirely for this email, skip to the next one
-        if not result:
-            print(f"[MAIN] Skipping dispatcher for: {email['subject']}\n")
+        # ── Step 2: Dedup check ───────────────────────────────────────────────
+        # If this gmailMessageId is already in automation_tasks → skip entirely
+        proceed, reason = should_process(email)
+        if not proceed:
+            print(f"[MAIN] Skipping — {reason}")
             continue
-        # ------------------------------------------------
 
-        # Merge AI result into email payload for dispatcher
-        email["generatedSolution"] = "\n".join(
-            task["description"] for task in result.get("tasks", [])
+        # ── Step 3: Tag ───────────────────────────────────────────────────────
+        tags = tagger.tag(email["thread_text"])
+        email["tags"] = tags
+
+        # ── Step 4: DeepSeek ──────────────────────────────────────────────────
+        try:
+            ai_result = process(email)
+        except Exception as e:
+            print(f"[MAIN] AI processing failed for '{subject}': {e}")
+            continue
+
+        if not ai_result or not ai_result.get("tasks"):
+            print(f"[MAIN] AI returned empty result for '{subject}' — skipping")
+            continue
+
+        print(json.dumps(ai_result, indent=2))
+
+        # ── Step 5: Validate ──────────────────────────────────────────────────
+        validation = validate_tasks(ai_result.get("tasks", []))
+
+        if not validation["passed"]:
+            print(f"[MAIN] Validation failed for '{subject}' — not storing task")
+            for issue in validation["issues"]:
+                print(f"  - {issue}")
+            # TODO: flag for manual review (future improvement)
+            continue
+
+        print(f"[MAIN] Validation passed for '{subject}'")
+
+        # ── Step 6: Store task in automation_tasks ────────────────────────────
+        task = create_task(
+            gmail_message_id  = message_id,
+            gmail_thread_id   = thread_id,
+            subject           = subject,
+            sender_email      = sender,
+            received_at       = datetime.now(timezone.utc),
+            tags              = tags,
+            ai_result         = ai_result,
+            validation_result = validation,
         )
-        email["parsedFields"]  = [
-            field
-            for task in result.get("tasks", [])
-            for field in task.get("parsed_fields", [])
-        ]
-        email["confidence"]    = result.get("confidence", "medium")
-        email["ai_result"]     = result  # full result for dispatcher
 
-        # Phase 6 — dispatch finished payload to friend's backend
-        dispatcher.send(email)
+        if not task:
+            # create_task returns None if gmailMessageId already exists
+            # This is the DB-level dedup catching anything that slipped through
+            print(f"[MAIN] Task already exists in DB for '{subject}' — skipping")
+            continue
 
-        print(json.dumps(result, indent=2)) 
-        
-        # --- OPTIONAL: Friendly proactive delay ---
-        # Keeps you under the Requests Per Minute (RPM) radar 
-        time.sleep(2)
+        # Store thread_text on the task document for retry flow
+        # (needed by routes.py _run_retry() if reviewer rejects)
+        from db.connection import get_db
+        get_db()["automation_tasks"].update_one(
+            {"_id": task["_id"]},
+            {"$set": {"threadText": email.get("thread_text", "")}}
+        )
+
+        print(f"[MAIN] Task stored — ID: {task['_id']}")
+
+        # ── Step 7: Send approval email to reviewer ───────────────────────────
+        sent = send_approval_email(task)
+
+        if sent:
+            print(f"[MAIN] Approval email sent for '{subject}'")
+        else:
+            print(f"[MAIN] Failed to send approval email for '{subject}'")
+
+        print(f"[MAIN] Done — task {task['_id']} is pending approval\n")

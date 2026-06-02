@@ -11,3 +11,5 @@ __pycache__/
 
 # OS Files
 .DS_Store
+
+.api_call_count
